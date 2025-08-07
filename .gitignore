@@ -1,0 +1,12 @@
+
+rf/2stage_pma2_lna/2stage_pma2_lna-backups/
+
+rf/saw_breakout/production/backups/
+
+rf/saw_breakout/saw_breakout-backups/
+
+rf/saw_breakout/production/
+
+*.bak
+
+*.lck

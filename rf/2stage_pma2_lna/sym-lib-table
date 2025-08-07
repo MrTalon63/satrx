@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "PMA2-43LN+")(type "KiCad")(uri "${KIPRJMOD}/lib/PMA2-43LN+.kicad_sym")(options "")(descr ""))
+  (lib (name "PMA2-63LN+")(type "KiCad")(uri "${KIPRJMOD}/lib/PMA2-63LN+.kicad_sym")(options "")(descr ""))
+)
