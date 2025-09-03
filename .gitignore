@@ -10,3 +10,9 @@ rf/saw_breakout/production/
 *.bak
 
 *.lck
+
+rf/2stage_pma2_lna/production/backups/
+
+rf/2stage_pma2_lna/production/
+
+rf/2stage_qpl_lna/2stage_qpl_lna-backups/
