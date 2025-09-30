@@ -5594,7 +5594,7 @@
 				)
 			)
 		)
-		(property "Footprint" "LED_THT:LED_D5.0mm_Clear"
+		(property "Footprint" "LED_SMD:LED_0603_1608Metric"
 			(at 59.69 149.86 0)
 			(effects
 				(font
@@ -5622,6 +5622,15 @@
 			)
 		)
 		(property "Sim.Pins" "1=K 2=A"
+			(at 59.69 149.86 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "MFR" "859-LTST-C190GKT"
 			(at 59.69 149.86 0)
 			(effects
 				(font
