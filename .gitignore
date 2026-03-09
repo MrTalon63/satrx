@@ -26,3 +26,13 @@ rf/vhf_lna/vhf_lna-backups/
 rf/groundplane/production/
 
 rf/groundplane/groundplane-backups/
+
+rf/GRF208X_LNA/GRF208X_LNA-backups/
+
+rf/GRF210X_LNA/GRF210X_LNA-backups/
+
+rf/L_band_backfire_lna/L_band_backfire_lna-backups/
+
+rf/si5351/si5351-backups/
+
+rf/si5351/production/
