@@ -36,3 +36,9 @@ rf/L_band_backfire_lna/L_band_backfire_lna-backups/
 rf/si5351/si5351-backups/
 
 rf/si5351/production/
+
+rf/L_band_backfire_lna/production/backups/
+
+rf/L_band_backfire_lna/production/
+
+rf/L_band_backfire_lna/grb/
