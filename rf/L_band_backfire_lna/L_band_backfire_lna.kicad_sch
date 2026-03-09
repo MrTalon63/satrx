@@ -3591,7 +3591,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Connector_Pin:Pin_D1.3mm_L11.0mm_LooseFit"
+		(property "Footprint" "Special_hole:Special Hole"
 			(at 66.04 97.79 0)
 			(effects
 				(font

@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "Special_hole")(type "KiCad")(uri "${KIPRJMOD}/Special_hole.pretty")(options "")(descr ""))
+)
