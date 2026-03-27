@@ -96,6 +96,10 @@
 								<span class="label">SNR</span>
 								<span class="value" id="Snr">—</span>
 							</div>
+							<div class="data-row">
+								<span class="label">Avg. SNR</span>
+								<span class="value" id="avgSnr">—</span>
+							</div>
 						</div>
 					</div>
 
@@ -116,7 +120,24 @@
 						</div>
 					</div>
 
+					<div class="chart-container">
+						<div class="chart-header">
+							<p class="section-title">SNR Trend</p>
+							<div class="chart-header-controls">
+								<label for="autoDownload" class="auto-download-control">
+									<input type="checkbox" id="autoDownload" value="false" />
+									<span>Auto-download CSV</span>
+								</label>
+								<button id="downloadCsvBtn" class="btn btn-primary chart-download-btn" onclick="getCsv()" disabled>Download CSV</button>
+							</div>
+						</div>
+						<div class="chart-canvas-wrap">
+							<canvas id="snrChart"></canvas>
+						</div>
+					</div>
+
 					<div class="spectrum-container">
+						<p class="section-title">Spectrum (FFT)</p>
 						<img id="spectrumImage" class="spectrum-image" src="" alt="Spectrum Image" />
 					</div>
 				</div>
@@ -124,8 +145,27 @@
 		</div>
 	</body>
 
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 	<script>
 		let freshState = true;
+		let prevNextEventIsAos = null;
+		let avgSNR = null;
+		let snrChartInstance = null;
+		let isFetchingApi = false;
+		let lastChartSampleAt = 0;
+		let chartTimestampHistory = [];
+		let chartSnrHistory = [];
+		let rawTimestampHistory = [];
+		let rawSnrHistory = [];
+		let rawViterbiBerHistory = [];
+		let rawViterbiLockHistory = [];
+		let rawDeframerLockHistory = [];
+		let rawRangeHistory = [];
+		let rawElevationHistory = [];
+		let rawAzimuthHistory = [];
+		const CHART_SAMPLE_INTERVAL_MS = 500;
+		const CHART_MAX_POINTS = 60;
 
 		function getStatusColor(stale) {
 			return stale ? "#ef4444" : "#10b981";
@@ -142,8 +182,42 @@
 			return isLocked ? "status-locked" : "status-unlocked";
 		}
 
+		function resetHistories() {
+			chartSnrHistory = [];
+			chartTimestampHistory = [];
+			rawSnrHistory = [];
+			rawElevationHistory = [];
+			rawAzimuthHistory = [];
+			rawViterbiBerHistory = [];
+			rawViterbiLockHistory = [];
+			rawDeframerLockHistory = [];
+			rawRangeHistory = [];
+			rawTimestampHistory = [];
+			lastChartSampleAt = 0;
+		}
+
+		function getCsv() {
+			if (!rawTimestampHistory || rawTimestampHistory.length === 0) {
+				return;
+			}
+
+			const headers = ["timestamp", "snr", "avg_snr", "viterbi_ber", "viterbi_lock", "deframer_lock", "range", "elevation", "azimuth"];
+			const rows = rawTimestampHistory.map((timestamp, i) => [timestamp.toISOString(), rawSnrHistory[i] !== undefined ? rawSnrHistory[i].toFixed(2) : "", avgSNR !== null ? avgSNR.toFixed(2) : "", rawViterbiBerHistory[i] !== undefined ? rawViterbiBerHistory[i] : "", rawViterbiLockHistory[i] !== undefined ? (rawViterbiLockHistory[i] ? "Locked" : "Unlocked") : "", rawDeframerLockHistory[i] !== undefined ? (rawDeframerLockHistory[i] ? "Locked" : "Unlocked") : "", rawRangeHistory[i] !== undefined ? rawRangeHistory[i].toFixed(0) : "", rawElevationHistory[i] !== undefined ? rawElevationHistory[i].toFixed(1) : "", rawAzimuthHistory[i] !== undefined ? rawAzimuthHistory[i].toFixed(1) : ""]);
+
+			const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+			const encodedUri = encodeURI(csvContent);
+			const link = document.createElement("a");
+			link.setAttribute("href", encodedUri);
+			link.setAttribute("download", `satdump_data_${new Date().toISOString()}.csv`);
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+		}
+
 		window.onload = () => {
 			const apiURI = localStorage.getItem("satdumpApiURI");
+			document.getElementById("downloadCsvBtn").disabled = true;
 			localStorage.removeItem("lastUpdate");
 			if (!apiURI) {
 				document.getElementById("dataDisplay").hidden = true;
@@ -159,9 +233,12 @@
 
 		setInterval(() => {
 			const apiURI = localStorage.getItem("satdumpApiURI");
+			const downloadCsvBtn = document.getElementById("downloadCsvBtn");
 			if (!apiURI) {
 				document.getElementById("dataDisplay").hidden = true;
 				document.getElementById("apiUriInput").hidden = false;
+				downloadCsvBtn.disabled = true;
+				isFetchingApi = false;
 				return;
 			}
 
@@ -171,18 +248,29 @@
 			if (lastUpdate) {
 				const timeDiff = new Date() - new Date(lastUpdate);
 				const isStale = timeDiff > 10000;
+				const isHealthy = !isStale;
 
-				statusDot.style.backgroundColor = getStatusColor(isStale);
-				statusDot.classList.toggle("pulse", !isStale);
+				statusDot.style.backgroundColor = getStatusColor(!isHealthy);
+				statusDot.classList.toggle("pulse", isHealthy);
 
-				if (isStale) {
+				if (!isHealthy) {
 					document.getElementById("lastUpdate").textContent = "⚠ Data is stale • Last update: " + new Date(lastUpdate).toLocaleTimeString();
 					document.getElementById("lastUpdate").classList.add("stale");
 				} else {
 					document.getElementById("lastUpdate").textContent = "Connected • Last update: " + new Date(lastUpdate).toLocaleTimeString();
 					document.getElementById("lastUpdate").classList.remove("stale");
 				}
+			} else {
+				statusDot.style.backgroundColor = getStatusColor(true);
+				statusDot.classList.remove("pulse");
+				document.getElementById("lastUpdate").textContent = "Waiting for data...";
+				document.getElementById("lastUpdate").classList.add("stale");
 			}
+
+			if (isFetchingApi) {
+				return;
+			}
+			isFetchingApi = true;
 
 			fetch(apiURI, {})
 				.then((response) => response.json())
@@ -193,7 +281,28 @@
 						freshState = false;
 					}
 
-					document.getElementById("trackedObject").textContent = data.object_tracker.object_name;
+					const trackName = data.object_tracker.object_name;
+					document.getElementById("trackedObject").textContent = trackName;
+					document.getElementById("statusDot").classList.remove("pulse");
+
+					// Check if AOS occurred (next event switched from AOS to LOS)
+					const nextEventIsAos = data.object_tracker.next_event_is_aos;
+					if (prevNextEventIsAos === true && nextEventIsAos === false) {
+						// AOS occurred: start a fresh history for the new pass.
+						resetHistories();
+					}
+					// Check if LOS occurred (next event switched from LOS to AOS)
+					else if (prevNextEventIsAos === false && nextEventIsAos === true) {
+						if (chartSnrHistory.length > 0) {
+							const autoDownload = document.getElementById("autoDownload").checked;
+							if (autoDownload) {
+								getCsv();
+								// If we just downloaded the CSV, might as well clear the arrays. They can lag a lot
+								resetHistories();
+							}
+						}
+					}
+					prevNextEventIsAos = nextEventIsAos;
 
 					const nextAosDate = new Date(data.object_tracker.next_aos_time * 1000);
 					const nextLosDate = new Date(data.object_tracker.next_los_time * 1000);
@@ -216,6 +325,31 @@
 					if (data.vfos && Object.keys(data.vfos).length > 0) {
 						const vfoKey = Object.keys(data.vfos)[0];
 						const vfoData = data.vfos[vfoKey];
+						const sampleTime = new Date();
+
+						rawSnrHistory.push(vfoData.live_pipeline.psk_demod.snr);
+						rawElevationHistory.push(data.object_tracker.sat_current_pos.el);
+						rawAzimuthHistory.push(data.object_tracker.sat_current_pos.az);
+						rawViterbiBerHistory.push(vfoData.live_pipeline.ccsds_conv_concat_decoder.viterbi_ber);
+						rawViterbiLockHistory.push(vfoData.live_pipeline.ccsds_conv_concat_decoder.viterbi_lock);
+						rawDeframerLockHistory.push(vfoData.live_pipeline.ccsds_conv_concat_decoder.deframer_lock);
+						rawRangeHistory.push(data.object_tracker.sat_current_range);
+						rawTimestampHistory.push(sampleTime);
+
+						const nowMs = Date.now();
+						const shouldSampleChart = nowMs - lastChartSampleAt >= CHART_SAMPLE_INTERVAL_MS;
+						if (shouldSampleChart) {
+							chartSnrHistory.push(vfoData.live_pipeline.psk_demod.snr);
+							chartTimestampHistory.push(sampleTime);
+							lastChartSampleAt = nowMs;
+
+							if (chartTimestampHistory.length > CHART_MAX_POINTS) {
+								chartTimestampHistory.shift();
+								chartSnrHistory.shift();
+							}
+						}
+
+						downloadCsvBtn.disabled = rawTimestampHistory.length === 0;
 
 						document.getElementById("frequency").textContent = formatHz(vfoData.frequency);
 						document.getElementById("viterbiBer").textContent = vfoData.live_pipeline.ccsds_conv_concat_decoder.viterbi_ber;
@@ -228,12 +362,90 @@
 
 						document.getElementById("peakSnr").textContent = `${vfoData.live_pipeline.psk_demod.peak_snr.toFixed(2)} dB`;
 						document.getElementById("Snr").textContent = `${vfoData.live_pipeline.psk_demod.snr.toFixed(2)} dB`;
+
+						// Calculate running average SNR over the last 30 seconds
+						const now = new Date();
+						const recentSnrs = rawSnrHistory.filter((_, i) => now - rawTimestampHistory[i] <= 30000);
+						if (recentSnrs.length > 0) {
+							avgSNR = recentSnrs.reduce((sum, val) => sum + val, 0) / recentSnrs.length;
+							document.getElementById("avgSnr").textContent = `${avgSNR.toFixed(2)} dB`;
+						} else {
+							document.getElementById("avgSnr").textContent = "—";
+						}
+
+						// SNR Chart Update
+						if (typeof Chart !== "undefined") {
+							const ctx = document.getElementById("snrChart").getContext("2d");
+							if (snrChartInstance && snrChartInstance.data && snrChartInstance.data.datasets && snrChartInstance.data.datasets[0]) {
+								snrChartInstance.data.labels = chartTimestampHistory.map((t) => t.toLocaleTimeString());
+								snrChartInstance.data.datasets[0].data = chartSnrHistory;
+								if (shouldSampleChart) {
+									snrChartInstance.update("none");
+								}
+							} else {
+								snrChartInstance = new Chart(ctx, {
+									type: "line",
+									data: {
+										labels: chartTimestampHistory.map((t) => t.toLocaleTimeString()),
+										datasets: [
+											{
+												label: "SNR (dB)",
+												data: chartSnrHistory,
+												borderColor: "rgba(6, 182, 212, 1)",
+												backgroundColor: "rgba(6, 182, 212, 0.2)",
+												fill: true,
+												tension: 0.3,
+											},
+										],
+									},
+									options: {
+										scales: {
+											x: {
+												title: {
+													display: true,
+													text: "Time",
+												},
+											},
+											y: {
+												title: {
+													display: true,
+													text: "SNR (dB)",
+												},
+											},
+										},
+										plugins: {
+											legend: {
+												display: false,
+											},
+										},
+										responsive: true,
+										maintainAspectRatio: false,
+										animation: false,
+										elements: {
+											point: {
+												radius: 0,
+											},
+										},
+									},
+								});
+							}
+						}
+					} else {
+						downloadCsvBtn.disabled = true;
+
+						document.getElementById("frequency").textContent = "—";
+						document.getElementById("viterbiBer").textContent = "—";
+						document.getElementById("viterbiLock").textContent = "—";
+						document.getElementById("deframerLock").textContent = "—";
+						document.getElementById("peakSnr").textContent = "—";
+						document.getElementById("Snr").textContent = "—";
 					}
 				})
 				.catch((error) => {
-					document.getElementById("statusDot").style.backgroundColor = "#ef4444";
-					document.getElementById("lastUpdate").textContent = `✗ Error: ${error.message}`;
-					document.getElementById("lastUpdate").classList.add("stale");
+					console.error("Error fetching API data:", error);
+				})
+				.finally(() => {
+					isFetchingApi = false;
 				});
 		}, 100);
 
@@ -258,7 +470,6 @@
 	<style>
 		* {
 			margin: 0;
-			padding: 0;
 			box-sizing: border-box;
 		}
 
@@ -376,6 +587,15 @@
 			box-shadow: 0 4px 10px rgba(6, 182, 212, 0.2);
 		}
 
+		.btn-primary:disabled {
+			background: var(--primary-lighter);
+			color: var(--text-secondary);
+			cursor: not-allowed;
+			transform: none;
+			box-shadow: none;
+			opacity: 0.7;
+		}
+
 		.btn-icon {
 			background: transparent;
 			color: var(--text-secondary);
@@ -463,6 +683,72 @@
 			display: grid;
 			grid-template-columns: repeat(2, 1fr);
 			gap: 1rem;
+		}
+
+		.chart-container {
+			grid-column: 1 / -1;
+			background: var(--primary-light);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 0.75rem;
+			box-shadow: var(--shadow);
+		}
+
+		.chart-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 0.75rem;
+			margin-bottom: 0.75rem;
+			flex-wrap: wrap;
+		}
+
+		.chart-header-controls {
+			display: flex;
+			align-items: center;
+			gap: 0.75rem;
+			margin-left: auto;
+			flex-wrap: wrap;
+		}
+
+		.auto-download-control {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.4rem;
+			font-size: 0.8rem;
+			color: var(--text-secondary);
+			user-select: none;
+			cursor: pointer;
+		}
+
+		.auto-download-control input {
+			margin: 0;
+			accent-color: var(--accent);
+		}
+
+		.section-title {
+			font-size: 0.85rem;
+			font-weight: 600;
+			color: var(--text-secondary);
+			text-transform: uppercase;
+			letter-spacing: 0.4px;
+		}
+
+		.chart-download-btn {
+			width: auto;
+			padding: 0.45rem 0.8rem;
+			font-size: 0.8rem;
+		}
+
+		.chart-canvas-wrap {
+			position: relative;
+			height: 220px;
+		}
+
+		#snrChart {
+			display: block;
+			width: 100%;
+			height: 100%;
 		}
 
 		.card {
@@ -566,6 +852,16 @@
 
 			.setup-card {
 				padding: 1.5rem;
+			}
+
+			.chart-header {
+				align-items: flex-start;
+			}
+
+			.chart-header-controls {
+				width: 100%;
+				justify-content: space-between;
+				margin-left: 0;
 			}
 		}
 
