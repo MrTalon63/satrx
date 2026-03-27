@@ -1,0 +1,45 @@
+{
+	"frequency": 138620000,
+	"object_tracker": {
+		"next_aos_time": 1774573412.0,
+		"next_event_in": 249.04299998283386,
+		"next_event_is_aos": false,
+		"next_los_time": 1774574292.0,
+		"object_name": "METEOR-M2 4",
+		"rot_current_pos": {
+			"az": 0.0,
+			"el": 0.0
+		},
+		"rot_current_req_pos": {
+			"az": 0.0,
+			"el": 0.0
+		},
+		"rotator_engaged": true,
+		"rotator_tracking": true,
+		"sat_azimuth_rate": 0.1578604619632478,
+		"sat_current_pos": {
+			"az": 142.818359375,
+			"el": 17.024169921875
+		},
+		"sat_current_range": 1960.2636605713674,
+		"sat_elevation_rate": -0.08549612503117025
+	},
+	"vfos": {
+		"59051_137900000_live": {
+			"frequency": 137900000.0,
+			"live_pipeline": {
+				"ccsds_conv_concat_decoder": {
+					"deframer_lock": true,
+					"rs_avg": 0,
+					"viterbi_ber": 0.078125,
+					"viterbi_lock": 1
+				},
+				"psk_demod": {
+					"freq": -5537.32421875,
+					"peak_snr": 13.019258499145508,
+					"snr": 5.69038200378418
+				}
+			}
+		}
+	}
+}

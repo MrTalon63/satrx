@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Satdump API Visualizer</title>
+		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+	</head>
+
+	<body>
+		<div class="container">
+			<div id="apiUriInput" class="setup-section" hidden>
+				<div class="setup-card">
+					<h2>Configure API</h2>
+					<div class="input-group">
+						<label for="apiUri">API URI</label>
+						<input type="text" id="apiUri" placeholder="http://localhost:8801/api" class="input-field" />
+					</div>
+					<button
+						class="btn btn-primary"
+						onclick="
+							localStorage.setItem('satdumpApiURI', document.getElementById('apiUri').value);
+							document.getElementById('apiUriInput').hidden = true;
+							document.getElementById('dataDisplay').hidden = false;
+							document.getElementById('apiUriLink').href = document.getElementById('apiUri').value;
+							document.getElementById('apiUriLink').textContent = document.getElementById('apiUri').value;
+						">
+						Connect
+					</button>
+				</div>
+			</div>
+
+			<div id="dataDisplay">
+				<div class="header-bar">
+					<div class="api-info">
+						<a id="apiUriLink" class="api-link" target="_blank"></a>
+					</div>
+					<div class="status-info">
+						<span class="status-dot" id="statusDot"></span>
+						<span id="lastUpdate">Initializing...</span>
+						<button
+							class="btn btn-icon"
+							style="color: var(--error)"
+							onclick="
+								localStorage.removeItem('satdumpApiURI');
+								document.getElementById('apiUriInput').hidden = false;
+								document.getElementById('dataDisplay').hidden = true;
+							">
+							X
+						</button>
+					</div>
+				</div>
+
+				<div id="dataContent" class="data-grid">
+					<div class="card">
+						<div class="card-content">
+							<div class="data-row">
+								<span class="label">Satellite</span>
+								<span class="value" id="trackedObject">—</span>
+							</div>
+							<div class="data-row">
+								<span class="label">Position</span>
+								<span class="value compact" id="objectPosition">—</span>
+							</div>
+							<div class="data-row">
+								<span class="label">Range</span>
+								<span class="value" id="objectSlantRange">—</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="card">
+						<div class="card-content">
+							<div class="data-row">
+								<span class="label">Next AOS</span>
+								<span class="value" id="nextAos">—</span>
+							</div>
+							<div class="data-row">
+								<span class="label">Next LOS</span>
+								<span class="value" id="nextLos">—</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="card">
+						<div class="card-content">
+							<div class="data-row">
+								<span class="label">Frequency</span>
+								<span class="value" id="frequency">—</span>
+							</div>
+							<div class="data-row">
+								<span class="label">Peak SNR</span>
+								<span class="value" id="peakSnr">—</span>
+							</div>
+							<div class="data-row">
+								<span class="label">SNR</span>
+								<span class="value" id="Snr">—</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="card">
+						<div class="card-content">
+							<div class="data-row">
+								<span class="label">Viterbi</span>
+								<span class="value" id="viterbiLock">—</span>
+							</div>
+							<div class="data-row">
+								<span class="label">Deframer</span>
+								<span class="value" id="deframerLock">—</span>
+							</div>
+							<div class="data-row">
+								<span class="label">BER</span>
+								<span class="value" id="viterbiBer">—</span>
+							</div>
+						</div>
+					</div>
+
+					<div class="spectrum-container">
+						<img id="spectrumImage" class="spectrum-image" src="" alt="Spectrum Image" />
+					</div>
+				</div>
+			</div>
+		</div>
+	</body>
+
+	<script>
+		let freshState = true;
+
+		function getStatusColor(stale) {
+			return stale ? "#ef4444" : "#10b981";
+		}
+
+		function formatHz(hz) {
+			if (hz >= 1e9) return (hz / 1e9).toFixed(2) + " GHz";
+			if (hz >= 1e6) return (hz / 1e6).toFixed(2) + " MHz";
+			if (hz >= 1e3) return (hz / 1e3).toFixed(2) + " kHz";
+			return hz.toFixed(0) + " Hz";
+		}
+
+		function getLockStatusClass(isLocked) {
+			return isLocked ? "status-locked" : "status-unlocked";
+		}
+
+		window.onload = () => {
+			const apiURI = localStorage.getItem("satdumpApiURI");
+			localStorage.removeItem("lastUpdate");
+			if (!apiURI) {
+				document.getElementById("dataDisplay").hidden = true;
+				document.getElementById("apiUriInput").hidden = false;
+				return;
+			}
+
+			document.getElementById("apiUriInput").hidden = true;
+			document.getElementById("dataDisplay").hidden = false;
+			document.getElementById("apiUriLink").href = apiURI;
+			document.getElementById("apiUriLink").textContent = apiURI;
+		};
+
+		setInterval(() => {
+			const apiURI = localStorage.getItem("satdumpApiURI");
+			if (!apiURI) {
+				document.getElementById("dataDisplay").hidden = true;
+				document.getElementById("apiUriInput").hidden = false;
+				return;
+			}
+
+			const lastUpdate = localStorage.getItem("lastUpdate");
+			const statusDot = document.getElementById("statusDot");
+
+			if (lastUpdate) {
+				const timeDiff = new Date() - new Date(lastUpdate);
+				const isStale = timeDiff > 10000;
+
+				statusDot.style.backgroundColor = getStatusColor(isStale);
+				statusDot.classList.toggle("pulse", !isStale);
+
+				if (isStale) {
+					document.getElementById("lastUpdate").textContent = "⚠ Data is stale • Last update: " + new Date(lastUpdate).toLocaleTimeString();
+					document.getElementById("lastUpdate").classList.add("stale");
+				} else {
+					document.getElementById("lastUpdate").textContent = "Connected • Last update: " + new Date(lastUpdate).toLocaleTimeString();
+					document.getElementById("lastUpdate").classList.remove("stale");
+				}
+			}
+
+			fetch(apiURI, {})
+				.then((response) => response.json())
+				.then((data) => {
+					localStorage.setItem("lastUpdate", new Date().toISOString());
+					if (freshState) {
+						document.querySelectorAll('[id*="Data"]').forEach((el) => (el.hidden = false));
+						freshState = false;
+					}
+
+					document.getElementById("trackedObject").textContent = data.object_tracker.object_name;
+
+					const nextAosDate = new Date(data.object_tracker.next_aos_time * 1000);
+					const nextLosDate = new Date(data.object_tracker.next_los_time * 1000);
+
+					if (data.object_tracker.next_event_is_aos) {
+						document.getElementById("nextAos").innerHTML = `<span class="event-soon">↓ ${nextAosDate.toLocaleTimeString()}</span> (in ${data.object_tracker.next_event_in.toFixed(1)}s)`;
+					} else {
+						document.getElementById("nextAos").textContent = nextAosDate.toLocaleTimeString();
+					}
+
+					if (!data.object_tracker.next_event_is_aos) {
+						document.getElementById("nextLos").innerHTML = `<span class="event-soon">↑ ${nextLosDate.toLocaleTimeString()}</span> (in ${data.object_tracker.next_event_in.toFixed(1)}s)`;
+					} else {
+						document.getElementById("nextLos").textContent = nextLosDate.toLocaleTimeString();
+					}
+
+					document.getElementById("objectPosition").textContent = `Az ${data.object_tracker.sat_current_pos.az.toFixed(1)}° • El ${data.object_tracker.sat_current_pos.el.toFixed(1)}°`;
+					document.getElementById("objectSlantRange").textContent = `${data.object_tracker.sat_current_range.toFixed(0)} km`;
+
+					if (data.vfos && Object.keys(data.vfos).length > 0) {
+						const vfoKey = Object.keys(data.vfos)[0];
+						const vfoData = data.vfos[vfoKey];
+
+						document.getElementById("frequency").textContent = formatHz(vfoData.frequency);
+						document.getElementById("viterbiBer").textContent = vfoData.live_pipeline.ccsds_conv_concat_decoder.viterbi_ber;
+
+						const vLock = vfoData.live_pipeline.ccsds_conv_concat_decoder.viterbi_lock;
+						const dLock = vfoData.live_pipeline.ccsds_conv_concat_decoder.deframer_lock;
+
+						document.getElementById("viterbiLock").innerHTML = `<span class="${getLockStatusClass(vLock)}">${vLock ? "✓ Locked" : "✗ Unlocked"}</span>`;
+						document.getElementById("deframerLock").innerHTML = `<span class="${getLockStatusClass(dLock)}">${dLock ? "✓ Locked" : "✗ Unlocked"}</span>`;
+
+						document.getElementById("peakSnr").textContent = `${vfoData.live_pipeline.psk_demod.peak_snr.toFixed(2)} dB`;
+						document.getElementById("Snr").textContent = `${vfoData.live_pipeline.psk_demod.snr.toFixed(2)} dB`;
+					}
+				})
+				.catch((error) => {
+					document.getElementById("statusDot").style.backgroundColor = "#ef4444";
+					document.getElementById("lastUpdate").textContent = `✗ Error: ${error.message}`;
+					document.getElementById("lastUpdate").classList.add("stale");
+				});
+		}, 100);
+
+		setInterval(() => {
+			const apiURI = localStorage.getItem("satdumpApiURI");
+			if (!apiURI) return;
+			const imageURL = apiURI.replace("/api", "/fft.jpeg");
+			fetch(imageURL, { cache: "no-store" })
+				.then((response) => response.blob())
+				.then((blob) => {
+					const blobUrl = URL.createObjectURL(blob);
+					const img = document.getElementById("spectrumImage");
+					if (img.src && img.src.startsWith("blob:")) {
+						URL.revokeObjectURL(img.src);
+					}
+					img.src = blobUrl;
+				})
+				.catch((error) => console.error("Error fetching spectrum image:", error));
+		}, 1000);
+	</script>
+
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+
+		[hidden] {
+			display: none !important;
+		}
+
+		:root {
+			--primary: #0f172a;
+			--primary-light: #1e293b;
+			--primary-lighter: #334155;
+			--accent: #06b6d4;
+			--accent-hover: #0891b2;
+			--accent-dark: #164e63;
+			--success: #10b981;
+			--warning: #f59e0b;
+			--error: #ef4444;
+			--text-primary: #f1f5f9;
+			--text-secondary: #cbd5e1;
+			--border: #475569;
+			--shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+		}
+
+		body {
+			font-family:
+				"Inter",
+				system-ui,
+				-apple-system,
+				sans-serif;
+			background: linear-gradient(135deg, var(--primary) 0%, #0c0f1a 100%);
+			color: var(--text-primary);
+			line-height: 1.5;
+			min-height: 100vh;
+		}
+
+		.container {
+			max-width: 1200px;
+			margin: 0 auto;
+			padding: 1rem;
+		}
+
+		.setup-section {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			min-height: 60vh;
+		}
+
+		.setup-card {
+			background: var(--primary-light);
+			border: 1px solid var(--border);
+			border-radius: 8px;
+			padding: 2rem;
+			max-width: 400px;
+			width: 100%;
+			box-shadow: var(--shadow);
+		}
+
+		.setup-card h2 {
+			font-size: 1.5rem;
+			margin-bottom: 1.5rem;
+			color: var(--text-primary);
+		}
+
+		.input-group {
+			margin-bottom: 1rem;
+		}
+
+		.input-group label {
+			display: block;
+			margin-bottom: 0.4rem;
+			font-weight: 500;
+			color: var(--text-primary);
+			font-size: 0.85rem;
+		}
+
+		.input-field {
+			width: 100%;
+			padding: 0.6rem;
+			background: var(--primary);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			color: var(--text-primary);
+			font-family: monospace;
+			font-size: 0.9rem;
+			transition: all 0.2s ease;
+		}
+
+		.input-field:focus {
+			outline: none;
+			border-color: var(--accent);
+			box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.1);
+		}
+
+		.btn {
+			padding: 0.6rem 1rem;
+			border: none;
+			border-radius: 6px;
+			font-weight: 500;
+			font-size: 0.9rem;
+			cursor: pointer;
+			transition: all 0.2s ease;
+			font-family: "Inter", system-ui;
+		}
+
+		.btn-primary {
+			background: var(--accent);
+			color: var(--primary);
+			width: 100%;
+		}
+
+		.btn-primary:hover {
+			background: var(--accent-hover);
+			transform: translateY(-1px);
+			box-shadow: 0 4px 10px rgba(6, 182, 212, 0.2);
+		}
+
+		.btn-icon {
+			background: transparent;
+			color: var(--text-secondary);
+			padding: 0.4rem 0.6rem;
+			font-size: 1rem;
+			min-width: auto;
+		}
+
+		.btn-icon:hover {
+			color: var(--accent);
+		}
+
+		.header-bar {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 1rem;
+			padding: 0.75rem 1rem;
+			background: var(--primary-light);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			gap: 1rem;
+		}
+
+		.api-info {
+			flex: 1;
+			min-width: 0;
+		}
+
+		.api-link {
+			color: var(--accent);
+			text-decoration: none;
+			font-family: monospace;
+			font-size: 0.85rem;
+			word-break: break-all;
+			transition: color 0.2s ease;
+			display: block;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.api-link:hover {
+			color: var(--accent-hover);
+		}
+
+		.status-info {
+			display: flex;
+			align-items: center;
+			gap: 0.5rem;
+			white-space: nowrap;
+			font-size: 0.85rem;
+		}
+
+		.status-dot {
+			width: 10px;
+			height: 10px;
+			border-radius: 50%;
+			background: var(--success);
+			flex-shrink: 0;
+		}
+
+		.status-dot.pulse {
+			animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+		}
+
+		@keyframes pulse {
+			0%,
+			100% {
+				opacity: 1;
+			}
+			50% {
+				opacity: 0.5;
+			}
+		}
+
+		#lastUpdate {
+			color: var(--text-secondary);
+		}
+
+		#lastUpdate.stale {
+			color: var(--warning);
+		}
+
+		.data-grid {
+			display: grid;
+			grid-template-columns: repeat(2, 1fr);
+			gap: 1rem;
+		}
+
+		.card {
+			background: var(--primary-light);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 1rem;
+			box-shadow: var(--shadow);
+			transition: all 0.2s ease;
+		}
+
+		.card:hover {
+			border-color: var(--accent);
+			box-shadow: 0 4px 10px rgba(6, 182, 212, 0.15);
+		}
+
+		.card-content {
+			display: flex;
+			flex-direction: column;
+			gap: 0.5rem;
+		}
+
+		.data-row {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 1rem;
+			padding: 0.4rem 0;
+		}
+
+		.label {
+			font-size: 0.8rem;
+			font-weight: 500;
+			color: var(--text-secondary);
+			text-transform: uppercase;
+			letter-spacing: 0.3px;
+			flex-shrink: 0;
+		}
+
+		.value {
+			font-size: 0.95rem;
+			font-weight: 500;
+			color: var(--text-primary);
+			font-family: monospace;
+			text-align: right;
+		}
+
+		.value.compact {
+			font-size: 0.9rem;
+		}
+
+		.status-locked {
+			color: var(--success);
+			font-weight: 600;
+		}
+
+		.status-unlocked {
+			color: var(--warning);
+			font-weight: 600;
+		}
+
+		.event-soon {
+			color: var(--accent);
+			font-weight: 600;
+		}
+
+		.spectrum-container {
+			grid-column: 1 / -1;
+			background: var(--primary-light);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 0.75rem;
+			box-shadow: var(--shadow);
+		}
+
+		.spectrum-image {
+			width: 100%;
+			height: auto;
+			border-radius: 4px;
+			max-height: 400px;
+			object-fit: contain;
+			background: var(--primary);
+			border: 1px solid var(--border);
+			display: block;
+		}
+
+		/* Responsive Design */
+		@media (max-width: 768px) {
+			.container {
+				padding: 0.75rem;
+			}
+
+			.data-grid {
+				grid-template-columns: 1fr;
+			}
+
+			.header-bar {
+				flex-direction: column;
+				align-items: flex-start;
+			}
+
+			.setup-card {
+				padding: 1.5rem;
+			}
+		}
+
+		/* Light mode support */
+		@media (prefers-color-scheme: light) {
+			:root {
+				--primary: #f8fafc;
+				--primary-light: #f1f5f9;
+				--primary-lighter: #e2e8f0;
+				--text-primary: #0f172a;
+				--text-secondary: #475569;
+				--border: #cbd5e1;
+			}
+
+			body {
+				background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+			}
+		}
+	</style>
+</html>
